@@ -2,7 +2,7 @@
 .terraform/
 
 terraform/brain-staging-450115-a8a48be0558a.json
-terraform/sky-pilot-credentials.json
+terraform/stage1/skypilot-sa.json
 # .tfstate files
 *.tfstate
 *.tfstate.*

@@ -1,43 +1,72 @@
 # -----------------------------------------------------------------------------
-# GKE Cluster - Control Plane
+# Networking
 # -----------------------------------------------------------------------------
 
-resource "google_container_cluster" "primary" {
-  project  = var.project_id
-  name     = var.cluster_name
-  location = var.zone
+# Creates the VPC network
+resource "google_compute_network" "vpc_network" {
+  project                 = var.project_id
+  name                    = var.network_name
+  auto_create_subnetworks = false # Best practice: create subnetworks manually
+}
 
-  # We will create our own node pool, so we remove the default one.
+# Creates the subnetwork for the GKE cluster
+resource "google_compute_subnetwork" "gke_subnetwork" {
+  project                  = var.project_id
+  name                     = var.subnetwork_name
+  ip_cidr_range            = var.subnetwork_cidr_range
+  region                   = var.gke_region
+  network                  = google_compute_network.vpc_network.id
+  private_ip_google_access = true
+
+  secondary_ip_range {
+    range_name    = "gke-pods"
+    ip_cidr_range = var.pods_cidr_range
+  }
+
+  secondary_ip_range {
+    range_name    = "gke-services"
+    ip_cidr_range = var.services_cidr_range
+  }
+}
+
+# -----------------------------------------------------------------------------
+# GKE Cluster
+# -----------------------------------------------------------------------------
+
+# Creates the GKE cluster control plane
+resource "google_container_cluster" "primary" {
+  project             = var.project_id
+  name                = var.cluster_name
+  location            = var.zone
+  deletion_protection = false
+
+  # Best practice: create a dedicated node pool and remove the default one.
   remove_default_node_pool = true
   initial_node_count       = 1
 
-  # Versioning and release channel
-  release_channel {
-    channel = "REGULAR"
-  }
-  min_master_version = "1.33.4-gke.1036000"
+  # --- Networking ---
+  # These now refer to the resources created above.
+  network    = google_compute_network.vpc_network.id
+  subnetwork = google_compute_subnetwork.gke_subnetwork.id
 
-  # Networking
-  network    = "projects/${var.project_id}/global/networks/default"
-  subnetwork = "projects/${var.project_id}/regions/us-central1/subnetworks/default"
+  # Corresponds to --enable-ip-alias
   ip_allocation_policy {
-    # This empty block enables VPC-native networking (ip-alias)
+    # An empty block enables IP aliasing
+  }
+  # Corresponds to --no-enable-intra-node-visibility
+  enable_intranode_visibility = false
+  # Corresponds to --default-max-pods-per-node
+  default_max_pods_per_node = 110
+
+  # --- Version and Maintenance ---
+  # Corresponds to --release-channel "regular"
+  # When using release channels, GKE manages the specific version for you.
+  release_channel {
+    channel = var.gke_release_channel
   }
 
-  # Security
-  master_auth {
-    client_certificate_config {
-      issue_client_certificate = false # Corresponds to --no-enable-basic-auth
-    }
-  }
-  master_authorized_networks_config {} # Corresponds to --no-enable-master-authorized-networks
-  enable_shielded_nodes = true
-  security_posture_config {
-    mode = "BASIC"
-    
-  }
-
-  # Add-ons
+  # --- Addons ---
+  # Corresponds to --addons HttpLoadBalancing,HorizontalPodAutoscaling,GcePersistentDiskCsiDriver
   addons_config {
     http_load_balancing {
       disabled = false
@@ -50,64 +79,119 @@ resource "google_container_cluster" "primary" {
     }
   }
 
-  # Logging, Monitoring, and Prometheus
-  logging_service    = "logging.googleapis.com/kubernetes"
-  monitoring_service = "monitoring.googleapis.com/kubernetes"
-  deletion_protection = false
+  # --- Cluster Autoscaling ---
+  # This enables autoscaling for the cluster itself, allowing it to manage different node pools.
+  # This is separate from node pool autoscaling.
+  cluster_autoscaling {
+    enabled             = var.enable_cluster_autoscaling
+    enable_node_autoprovisioning = false
+    autoscaling_profile = "OPTIMIZE_UTILIZATION"
+
+    resource_limits {
+      resource_type = "cpu"
+      minimum       = var.autoscaling_min_cpu_cores
+      maximum       = var.autoscaling_max_cpu_cores
+    }
+    resource_limits {
+      resource_type = "memory"
+      minimum       = var.autoscaling_min_memory_gb
+      maximum       = var.autoscaling_max_memory_gb
+    }
+  }
+
+  # --- Security ---
+  # Corresponds to --no-enable-basic-auth
+  master_auth {
+    client_certificate_config {
+      issue_client_certificate = false
+    }
+  }
+  # --no-enable-master-authorized-networks is the default behavior, so no configuration is needed.
+
+  # Corresponds to --security-posture=standard and --workload-vulnerability-scanning=disabled
+  security_posture_config {
+    mode               = "BASIC"
+    vulnerability_mode = "VULNERABILITY_DISABLED"
+  }
+
+  # --- Logging & Monitoring ---
+  # Corresponds to --logging=SYSTEM,WORKLOAD
+  logging_config {
+    enable_components = ["SYSTEM_COMPONENTS", "WORKLOADS"]
+  }
+  # Corresponds to --monitoring=SYSTEM and --enable-managed-prometheus
+  monitoring_config {
+    enable_components = ["SYSTEM_COMPONENTS"]
+    managed_prometheus {
+      enabled = true
+    }
+  }
 }
 
-# -----------------------------------------------------------------------------
-# Node Pool - Single Pool with A2 Machine Type and GPU
-# -----------------------------------------------------------------------------
-
-resource "google_container_node_pool" "primary_gpu_pool" {
-  name     = "primary-gpu-pool"
+# Creates the primary node pool for the GKE cluster
+resource "google_container_node_pool" "gpu_node_pool" {
   project  = var.project_id
-  cluster  = google_container_cluster.primary.name
-  location = google_container_cluster.primary.location
+  name     = var.gpu_node_pool_name
+  cluster  = google_container_cluster.primary.id
+  location = var.zone
 
-  initial_node_count = 2 # As requested in your gcloud command
-  max_pods_per_node  = 110
+  # Set a fixed number of nodes instead of using autoscaling.
+  node_count = var.gpu_node_count
 
-  # Node lifecycle management
+  # Corresponds to --node-locations
+  node_locations = [
+    var.zone,
+  ]
+
+  # --- Node Pool Management ---
+  # Corresponds to --enable-autorepair and --enable-autoupgrade
   management {
     auto_repair  = true
     auto_upgrade = true
   }
+
+  # Corresponds to --max-surge-upgrade and --max-unavailable-upgrade
   upgrade_settings {
     max_surge       = 1
     max_unavailable = 0
   }
 
-  # Node configuration
+  # --- Node Configuration ---
   node_config {
-    # CORRECTED: Using the A2 machine type for A100 GPUs.
-    machine_type = "a2-highgpu-2g"
+    # Changed machine type to an A2 instance, which is required for A100 GPUs.
+    # The a2-highgpu-2g machine type comes with two A100 GPUs attached.
+    machine_type = var.gpu_machine_type
     image_type   = "COS_CONTAINERD"
-    disk_size_gb = 100
-    disk_type    = "pd-balanced"
+    disk_size_gb = var.gpu_disk_size_gb
+    disk_type    = var.gpu_disk_type
 
-    # This block confirms the GPU type for the A2 machine.
+    # Updated the GPU configuration to use two NVIDIA A100 GPUs.
+    # GKE will automatically install the necessary NVIDIA drivers.
     guest_accelerator {
-      type  = "nvidia-tesla-a100"
-      count = 2
-      gpu_driver_installation_config {
-        gpu_driver_version = "LATEST"
-      }
+      type  = var.gpu_accelerator_type
+      count = var.gpu_accelerator_count
     }
 
-    # Required for GPU nodes
+    # Add a taint to ensure only pods that request GPUs are scheduled on these nodes.
+    # Pods will need a corresponding "toleration" to run here.
+    taint {
+      key    = "nvidia.com/gpu"
+      value  = "present"
+      effect = "NO_SCHEDULE"
+    }
 
+    # Corresponds to --metadata disable-legacy-endpoints=true
     metadata = {
       disable-legacy-endpoints = "true"
     }
-    oauth_scopes = [
-      "https://www.googleapis.com/auth/devstorage.read_only",
-      "https://www.googleapis.com/auth/logging.write",
-      "https://www.googleapis.com/auth/monitoring",
-      "https://www.googleapis.com/auth/servicecontrol",
-      "https://www.googleapis.com/auth/service.management.readonly",
-      "https://www.googleapis.com/auth/trace.append",
-    ]
+
+    # Corresponds to --scopes
+    oauth_scopes = var.node_oauth_scopes
+
+    # Corresponds to --enable-shielded-nodes
+    shielded_instance_config {
+      enable_secure_boot          = true
+      enable_integrity_monitoring = true
+    }
   }
 }

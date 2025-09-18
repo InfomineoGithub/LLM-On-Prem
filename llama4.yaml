@@ -1,0 +1,22 @@
+# sglang.yaml
+envs:
+  HF_TOKEN: null
+
+resources:
+  image_id: docker:lmsysorg/sglang:latest
+  accelerators: A100
+  ports: 30000
+
+run: |
+  conda deactivate
+  python3 -m sglang.launch_server \
+    --model-path meta-llama/Llama-4-Maverick-17B-128E-Instruct \
+    --speculative-algorithm EAGLE3 \
+    --speculative-draft-model-path nvidia/Llama-4-Maverick-17B-128E-Eagle3 \
+    --speculative-num-steps 3 \
+    --speculative-eagle-topk 1 \
+    --speculative-num-draft-tokens 4 \
+    --trust-remote-code \
+    --tp 2 \
+    --context-length 1000000
+    --host 0.0.0.0 \
