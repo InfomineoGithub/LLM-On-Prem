@@ -13,20 +13,6 @@ variable "zone" {
   default     = "us-central1-c"
 }
 
-variable "credentials_file_path" {
-  description = "The path to the GCP credentials JSON file used to authenticate Terraform."
-  type        = string
-}
-
-# -----------------------------------------------------------------------------
-# GCS Backend Bucket Variable
-# -----------------------------------------------------------------------------
-
-variable "gcs_bucket_name" {
-  description = "The globally unique name for the GCS bucket for Terraform state."
-  type        = string
-}
-
 # -----------------------------------------------------------------------------
 # Service Account Variables
 # -----------------------------------------------------------------------------

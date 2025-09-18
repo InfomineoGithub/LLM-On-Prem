@@ -1,6 +1,7 @@
 # -----------------------------------------------------------------------------
 # GKE Cluster - Control Plane
 # -----------------------------------------------------------------------------
+
 resource "google_container_cluster" "primary" {
   project  = var.project_id
   name     = var.cluster_name
@@ -21,10 +22,6 @@ resource "google_container_cluster" "primary" {
   subnetwork = "projects/${var.project_id}/regions/us-central1/subnetworks/default"
   ip_allocation_policy {
     # This empty block enables VPC-native networking (ip-alias)
-  }
-  private_cluster_config {
-    # Corresponds to --no-enable-intra-node-visibility
-    enable_private_nodes = false
   }
 
   # Security
@@ -62,6 +59,7 @@ resource "google_container_cluster" "primary" {
 # -----------------------------------------------------------------------------
 # Node Pool - Single Pool with A2 Machine Type and GPU
 # -----------------------------------------------------------------------------
+
 resource "google_container_node_pool" "primary_gpu_pool" {
   name     = "primary-gpu-pool"
   project  = var.project_id
