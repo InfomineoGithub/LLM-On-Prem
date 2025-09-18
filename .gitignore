@@ -35,3 +35,6 @@ override.tf.json
 # Ignore CLI configuration files
 .terraformrc
 terraform.rc
+
+brain-staging-450115-a8a48be0558a.json
+sky-pilot-credentials.json
