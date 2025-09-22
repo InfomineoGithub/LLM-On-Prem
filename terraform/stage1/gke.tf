@@ -51,7 +51,8 @@ resource "google_container_cluster" "primary" {
 
   # Corresponds to --enable-ip-alias
   ip_allocation_policy {
-    # An empty block enables IP aliasing
+    cluster_secondary_range_name  = "gke-pods"
+    services_secondary_range_name = "gke-services"
   }
   # Corresponds to --no-enable-intra-node-visibility
   enable_intranode_visibility = false
@@ -84,19 +85,18 @@ resource "google_container_cluster" "primary" {
   # This is separate from node pool autoscaling.
   cluster_autoscaling {
     enabled             = var.enable_cluster_autoscaling
-    enable_node_autoprovisioning = false
-    autoscaling_profile = "OPTIMIZE_UTILIZATION"
+    # autoscaling_profile = "OPTIMIZE_UTILIZATION"
 
-    resource_limits {
-      resource_type = "cpu"
-      minimum       = var.autoscaling_min_cpu_cores
-      maximum       = var.autoscaling_max_cpu_cores
-    }
-    resource_limits {
-      resource_type = "memory"
-      minimum       = var.autoscaling_min_memory_gb
-      maximum       = var.autoscaling_max_memory_gb
-    }
+    # resource_limits {
+    #   resource_type = "cpu"
+    #   minimum       = var.autoscaling_min_cpu_cores
+    #   maximum       = var.autoscaling_max_cpu_cores
+    # }
+    # resource_limits {
+    #   resource_type = "memory"
+    #   minimum       = var.autoscaling_min_memory_gb
+    #   maximum       = var.autoscaling_max_memory_gb
+    # }
   }
 
   # --- Security ---
@@ -159,13 +159,13 @@ resource "google_container_node_pool" "gpu_node_pool" {
   # --- Node Configuration ---
   node_config {
     # Changed machine type to an A2 instance, which is required for A100 GPUs.
-    # The a2-highgpu-2g machine type comes with two A100 GPUs attached.
+    # The a2-highgpu-2g machine type comes with two H100 GPUs attached.
     machine_type = var.gpu_machine_type
     image_type   = "COS_CONTAINERD"
     disk_size_gb = var.gpu_disk_size_gb
     disk_type    = var.gpu_disk_type
 
-    # Updated the GPU configuration to use two NVIDIA A100 GPUs.
+    # Updated the GPU configuration to use two NVIDIA H100 GPUs.
     # GKE will automatically install the necessary NVIDIA drivers.
     guest_accelerator {
       type  = var.gpu_accelerator_type
