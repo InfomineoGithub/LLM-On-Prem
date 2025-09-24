@@ -40,3 +40,5 @@ terraform.rc
 
 sglang.yaml
 start.sh
+
+start.*.sh

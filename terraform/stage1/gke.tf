@@ -158,14 +158,12 @@ resource "google_container_node_pool" "gpu_node_pool" {
 
   # --- Node Configuration ---
   node_config {
-    # Changed machine type to an A2 instance, which is required for A100 GPUs.
-    # The a2-highgpu-2g machine type comes with two H100 GPUs attached.
+    tags = ["gke-nodes"]
     machine_type = var.gpu_machine_type
     image_type   = "COS_CONTAINERD"
     disk_size_gb = var.gpu_disk_size_gb
     disk_type    = var.gpu_disk_type
 
-    # Updated the GPU configuration to use two NVIDIA H100 GPUs.
     # GKE will automatically install the necessary NVIDIA drivers.
     guest_accelerator {
       type  = var.gpu_accelerator_type
